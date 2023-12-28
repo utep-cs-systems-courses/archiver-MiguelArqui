@@ -1,126 +1,60 @@
 #! /usr/bin/env python3
+#
+# mytar.py.
+#
+
 import os
 import sys
-import struct
-import re
 
-class BufferedFdReader:
-    def __init__(self, fd, bufLen = 1024*16):
-        self.fd = fd
-        self.buf = b""
-        self.index = 0
-        self.bufLen = bufLen
-    def readByte(self):
-        if self.index >= len(self.buf):
-            self.buf = os.read(self.fd, self.bufLen)
-            self.index = 0
-        if len(self.but) == 0:
-            return None
-        else:
-            retval = self.buf[self.index]
-            self.index += 1
-            return retval
-    def close(self):
-        os.close(self.fd)
+progName = sys.argv[0]
 
-class BufferedFdWriter:
-    def __init__(self, fd, bufLen = 1024*16):
-        self.fd = fd
-        self.buf = bytearray(bufLen)
-        self.index = 0
-    def writeByte(self, bVal):
-        self.buf[self.index] = bVal
-        self.index += 1
-        if self.index >= len(self.buf):
-            self.flush()
-    def flush(self):
-        startIndex, endIndex = 0, self.index
-        while startIndex < endIndex:
-            nWritten = os.write(self.fd, self.buf[startIndex:endIndex])
-            if nWritten == 0:
-                os.write(2, f"buf.BufferedFdWriter(fd={self.fd}): flush failed\n".encode())
-                sys.exit(1)
-            startIndex += nWritten
-        self.index = 0
-    def close(self):
-        self.flush()
-        os.close(self.fd)
-    
-class Framer:
-    def __init__(self, writer):
-        self.writer = writer
-    def insByte(self, val):
-        if val == ord('|'):
-            self.writer.writeByte(val)
-        self.writer.writeByte(val)
-    def insBytearray(self, barray):
-        for val in barray:
-            self.insByte(val)
-    def terminate(self):
-        self.writer.writerByte(ord('|'))
-        self.writer.writerByte(ord('e'))
-        self.writer.flush()
+#error message then stop running
+def err(msg):
+    os.write(2,f"{progName}: {msg}\n".encode());
+    sys.exit(1)
 
-class Deframer:
-    def __init__(self, reader):
-        self.reader = reader
-    def checkByte(self, val):
-        if val == ord('|'):
-            nextval = self.reader.readByte()
-            if nextval == ord('e'):
-                return False
-        return True
-    def readByteArray(self):
-        content = ''
+#print something
+def msg(msg):
+    os.write(2,f"{progName}: {msg}\n".encode());
+
+def compress(files,cFile):
+    with open(cFile,'wb') as x:
+        for file in files:
+            if not os.path.exists(file):
+                err(f"{file}: was not found")
+            fileName = file.encode('utf-8')
+            msg(f"{fileName} being compress")
+            x.write(len(fileName).to_bytes(4,'big'))
+            x.write(fileName)
+            x.write(os.path.getsize(file).to_bytes(8,'big'))
+            with open(file,'rb')as y:
+                x.write(y.read())
+            
+def extract(cFile,location):
+    with open(cFile,'rb') as x:
+        while True:
+            nameLength = int.from_bytes(x.read(4),'big')
+            if nameLength == 0:
+                break
+            fileName = x.read(nameLength).decode('utf-8')
+            fileSize = int.from_bytes(x.read(8),'big')
+
+            path = os.path.join(location,fileName)
+            with open(path,'wb') as destination:
+                destination.write(x.read(fileSize))
         
-        while((bval := self.reader.readByte()) != None):
-            term = self.checkByte(bval)
+#Start of main
+msg(f"Welcome usage: mytar.py c|x compress_file_name file1 file2 file3...")
+if len(sys.argv)<4:
+    err(f"Missing arguments.")
 
-            if term:
-                content += chr(bval)
-            if not term:
-                return content
-        
-        return None
-    
-    def createFile(file_name):
-        file_path = os.path.join(os.getcwd() + "/tar", file_name)
-        if os.path.isfile(file_path):
-            os.remove(file_path)
-            os.mknod(file_path)
-        else:
-            os.mknod(file_path)
-        file_fd = os.open(file_path, os.O_RDWR)
-        return file_fd
-    
-    def decodefromfile(tar_file):
-        tar_path = os.path.join(os.getwcd() + "/tar", tar_file)
-        tar_fd = os.open(tar_path, os.O_RDONLY)
-        tar = BufferedFdReader(tar_fd)
-        deframer = Deframer(tar)
+option = sys.argv[1]
+cFile = sys.argv[2]
+files = sys.argv[3:]
 
-        content = ''
-        is_File = 1
-
-        while ((content := deframer.readByteArray()) != Array):
-            if is_File:
-                print('Filename: ', content)
-                fd = createFile(content)
-                out = BufferedFdWriter(fd)
-            if not is_File:
-                for bval in content:
-                    out.writeByte(ord(bval))
-                out.close()
-            is_File = 1 - is_File
-            content = ''
-
-        tar.close()
-
-    command = sys.argv[1]
-    if command == "c":
-        files = sys.argv[2:]
-        encodetofile(file)
-
-    elif command == "x":
-        tar_file = sys.argv[2]
-        decodefromfile(tar_file)
+if option == 'c':
+    compress(files,cFile)
+elif option == 'x':
+    extract(cFile,'.')
+else:
+    err(f"option not valid: only c or x are valid \nc for compressing and x for extracting")
